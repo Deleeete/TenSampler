@@ -2,7 +2,6 @@ using System.Text;
 
 internal class Game(Dictionary<int, int> Choices, IPlayer playerA, IPlayer playerB)
 {
-    private readonly Random _rnd = new();
     public IPlayer PlayerA { get; } = playerA;
     public IPlayer PlayerB { get; } = playerB;
     public int ScoreA { get; private set; }
@@ -26,7 +25,7 @@ internal class Game(Dictionary<int, int> Choices, IPlayer playerA, IPlayer playe
     {
         if (!Choices.TryGetValue(choice, out int prob))
             throw new Exception("Invalid choice");
-        if (_rnd.Next(100) < prob)
+        if (Random.Shared.Next(100) < prob)
             return choice;
         return 0;
     }
@@ -118,7 +117,7 @@ internal class Game(Dictionary<int, int> Choices, IPlayer playerA, IPlayer playe
             int choiceB = History[round, PlayerBIndex, ChoiceIndex];
             int scoreB = History[round, PlayerBIndex, ScoreIndex];
             int gainB = History[round, PlayerBIndex, GainIndex];
-            sb.AppendFormat("[{0}] ScoreA={1:d2} ChoiceA={2:d2} GainA={3} | ScoreB={4:d2} ChoiceB={5:d2} GainB={6}\n", round,
+            sb.AppendFormat("Round[{0}] ScoreA={1:d2} ChoiceA={2:d2} GainA={3} | ScoreB={4:d2} ChoiceB={5:d2} GainB={6}\n", round,
                 scoreA, choiceA, gainA,
                 scoreB, choiceB, gainB);
         }

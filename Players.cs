@@ -1,14 +1,27 @@
-internal class Player1 : IPlayer
+internal abstract class PlayerBase : IPlayer
 {
-    public int GetChoice(Game game)
+    public string Id { get; }
+
+    public PlayerBase(string name)
+    {
+        Id = $"{name} <{GetHashCode():X8}>";
+    }
+    public abstract int GetChoice(Game game);
+    public override string ToString()
+        => Id;
+}
+
+internal class Player1(string name) : PlayerBase(name)
+{
+    public override int GetChoice(Game game)
     {
         return 1;
     }
 }
 
-internal class Player2 : IPlayer
+internal class Player2(string name) : PlayerBase(name)
 {
-    public int GetChoice(Game game)
+    public override int GetChoice(Game game)
     {
         if (!game.IsPlayerLeading(this))
             return 10;
@@ -17,11 +30,11 @@ internal class Player2 : IPlayer
     }
 }
 
-internal class Player3(int[] sortedChoices) : IPlayer
+internal class Player3(string name, int[] sortedChoices) : PlayerBase(name)
 {
     private readonly int[] _sortedChoices = sortedChoices;
 
-    public int GetChoice(Game game)
+    public override int GetChoice(Game game)
     {
         int diff = game.GetScoreDiff(this);
         if (diff >= 0)

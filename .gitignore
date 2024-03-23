@@ -1,3 +1,6 @@
+.vs
+Properties
+*.user
 .vscode
 bin
 obj
