@@ -6,22 +6,34 @@ internal class Csv
 
     public int Cols { get; private set; }
 
-    public Csv(string[] cols, int pad)
+    public Csv(IEnumerable<string> cols, int pad)
     {
-       NewRow("\\");
+        NewRow("\\");
+        int colCount = 0;
         foreach (var col in cols)
         {
             AppendElements(col);
             for (int i = 1; i < pad; i++)
                 AppendElements(" ");
+            colCount++;
         }
-        Cols = cols.Length * pad;
+        Cols = colCount * pad;
     }
-    public Csv(string[] cols)
+    public Csv(IEnumerable<string> cols)
     {
         NewRow("\\");
-        AppendElements(cols);
-        Cols = cols.Length;
+        Cols = AppendElements(cols);
+    }
+
+    public int AppendElements(IEnumerable<string> cols)
+    {
+        int colCount = 0;
+        foreach (var col in cols)
+        {
+            _sb.Append(col);
+            _sb.Append(',');
+        }
+        return colCount;
     }
 
     public void AppendElements(params string[] cols)

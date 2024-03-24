@@ -1,18 +1,7 @@
 ﻿const int DefaultSampleSize = 100_0000;
 const int DefaultRunCount = 10;
 
-if (args.Length == 1 && (args[0] == "help" || args[0] == "-h" || args[0] == "--help"))
-{
-    Console.WriteLine("Usage:");
-    Console.WriteLine("sampler help|-h|--help   - Print this help");
-    Console.WriteLine("sampler                  - Generate winning rate matrix");
-    Console.WriteLine("sampler N                - Generate winning rate matrix (Sample size = N)");
-    Console.WriteLine($"sampler A B              - Run {DefaultRunCount} game(s) between player A and player B with details");
-    Console.WriteLine("sampler A B N            - Generate winning rate between player A and player B (Sample size = N)\n");
-    return;
-}
-
-Dictionary<int, int> choices = new()
+Dictionary<int, int> probs = new()
 {
     {1, 100},
     {2, 48},
@@ -21,63 +10,88 @@ Dictionary<int, int> choices = new()
     {5, 15},
     {10, 7},
 };
-int[] sortedChoices = [.. choices.Keys];
-Array.Sort(sortedChoices);
+GameChoiceMap choiceMap = new(probs);
 
-
-Dictionary<string, IPlayer> players = new()
+Dictionary<string, IStrategy> strategies = new()
 {
-    { "1", new Player1("1") },
-    { "2", new Player2("2") },
-    { "3", new Player3("3", sortedChoices) },
+    { "1", new StrategyAllN(1) },
+    { "2", new Strategy2() },
+    { "3", new Strategy3() },
+    { "randomer", new StrategyRandom() }
 };
 
-int sampleSize = args.Length switch
+foreach (var choice in probs.Keys)
 {
-    1 => GetSampleSize(args[0]),
-    3 => GetSampleSize(args[2]),
-    _ => DefaultSampleSize,
-};
-
-if (args.Length <= 1)
-{
-    await GenerateMatrix(players, sampleSize);
+    if (choice == 1) // all-1 is already covered by type-1
+        continue;
+    var player = new StrategyAllN(choice);
+    strategies.Add(player.Name, player);
 }
-else
+
+
+try
 {
-    var playerA = GetPlayer(args[0]);
-    var playerB = GetPlayer(args[1]);
-    if (args.Length == 2)
-        Sample(playerA, playerB);
+    if (args.Length == 1 && (args[0] == "help" || args[0] == "-h" || args[0] == "--help"))
+    {
+        Console.WriteLine("Usage:");
+        Console.WriteLine("sampler help|-h|--help   - Print this help");
+        Console.WriteLine("sampler                  - Generate winning rate matrix");
+        Console.WriteLine("sampler N                - Generate winning rate matrix (Sample size = N)");
+        Console.WriteLine($"sampler A B              - Run {DefaultRunCount} game(s) between player A and player B with details");
+        Console.WriteLine("sampler A B N            - Generate winning rate between player A and player B (Sample size = N)\n");
+        PrintStrategies();
+        return;
+    }
+
+    int sampleSize = args.Length switch
+    {
+        1 => GetSampleSize(args[0]),
+        3 => GetSampleSize(args[2]),
+        _ => DefaultSampleSize,
+    };
+
+    if (args.Length <= 1)
+    {
+        await GenerateMatrix(strategies, sampleSize);
+    }
     else
     {
-        (double rateA, double rateDraw, double rateB) = WinningRate(playerA, playerB, sampleSize);
-        PrintWinningRate(rateA, rateDraw, rateB);
+        Player playerA = new(GetStrategy(args[0]));
+        Player playerB = new(GetStrategy(args[1]));
+        if (args.Length == 2)
+            Run(playerA, playerB);
+        else
+        {
+            (double rateA, double rateDraw, double rateB) = WinningRate(playerA, playerB, sampleSize);
+            PrintWinningRate(rateA, rateDraw, rateB);
+        }
     }
+}
+catch (Exception ex)
+{
+    Environment.FailFast(ex.ToString());
 }
 
 Environment.Exit(0);
 
-
 //////////////////////////////////////////////////////////////////
 
 
-async Task GenerateMatrix(Dictionary<string, IPlayer> players, int sampleSize)
+async Task GenerateMatrix(Dictionary<string, IStrategy> strategies, int sampleSize)
 {
-    string[] playerNames = [.. players.Keys];
-    Csv fullTable = new(playerNames, 2);
-    Csv compactTable = new(playerNames);
-    int counter = 0, totalCount = playerNames.Length * playerNames.Length;
-    for (int i = 0; i < playerNames.Length; i++)
+    string[] strategyNames = strategies.Values.Select(s => s.Name).ToArray();
+    Csv fullTable = new(strategyNames, 3);
+    Csv compactTable = new(strategyNames);
+    int counter = 0, totalCount = strategyNames.Length * strategyNames.Length;
+    foreach (var kvpStrategyA in strategies)
     {
-        var playerNameA = playerNames[i];
-        fullTable.NewRow(playerNameA);
-        compactTable.NewRow(playerNameA);
-        var playerA = players[playerNameA];
-        for (int j = 0; j < playerNames.Length; j++)
+        fullTable.NewRow(kvpStrategyA.Value.Name);
+        compactTable.NewRow(kvpStrategyA.Value.Name);
+        Player playerA = new(kvpStrategyA.Value);
+        foreach (var kvpStrategyB in strategies)
         {
             Console.WriteLine("---------------------");
-            var playerB = players[playerNames[j]];
+            Player playerB = new(kvpStrategyB.Value);
             (double rateA, double rateDraw, double rateB) = WinningRate(playerA, playerB, sampleSize, false);
             PrintWinningRate(rateA, rateDraw, rateB);
             fullTable.AppendElements($"{rateA:f4}", $"{rateDraw:f4}", $"{rateB:f4}");
@@ -91,20 +105,20 @@ async Task GenerateMatrix(Dictionary<string, IPlayer> players, int sampleSize)
     await File.WriteAllTextAsync("compact.csv", compactTable.ToString());
 }
 
-void Sample(IPlayer playerA, IPlayer playerB)
+void Run(Player playerA, Player playerB)
 {
     for (int i = 0; i < DefaultRunCount; i++)
     {
-        Game game = new(choices, playerA, playerB);
-        game = new(choices, playerA, playerB);
+        Game game = new(choiceMap, playerA, playerB);
+        game = new(choiceMap, playerA, playerB);
         game.Reset();
         game.RunToEnd();
-        Console.WriteLine($"Run #{i}:");
+        Console.WriteLine($"Run #{i} [{playerA} vs {playerB}]");
         Console.WriteLine(game.GetHistoryString());
     }
 }
 
-(double, double, double) WinningRate(IPlayer playerA, IPlayer playerB, int sampleSize, bool showProgress = true)
+(double, double, double) WinningRate(Player playerA, Player playerB, int sampleSize, bool showProgress = true)
 {
     Console.WriteLine($"Evaluating: [{playerA} vs {playerB}] Sample size: {sampleSize}");
     ProgressControl progress = new(0, sampleSize);
@@ -113,7 +127,7 @@ void Sample(IPlayer playerA, IPlayer playerB)
         progress.Show();
     Parallel.For(0, sampleSize, i =>
     {
-        Game game = new(choices, playerA, playerB);
+        Game game = new(choiceMap, playerA, playerB);
         game.Reset();
         game.RunToEnd();
         progress.Increment();
@@ -141,18 +155,23 @@ static int GetSampleSize(string s)
     return sampleSize;
 }
 
-IPlayer GetPlayer(string name)
+IStrategy GetStrategy(string name)
 {
     name = name.Trim();
-    if (!players.TryGetValue(name, out IPlayer? player))
+    if (!strategies.TryGetValue(name, out IStrategy? strategy))
     {
-        Console.WriteLine($"Unknown player \"{name}\"");
-        Console.WriteLine("Player lists:");
-        foreach (var knownPlayer in players)
-            Console.WriteLine($" - Name:{knownPlayer.Key} (ID: {knownPlayer.Value})");
+        Console.WriteLine($"Unknown strategy \"{name}\"");
+        PrintStrategies();
         Environment.Exit(-1);
     }
-    return player;
+    return strategy;
+}
+
+void PrintStrategies()
+{
+    Console.WriteLine("Player lists:");
+    foreach (var knownPlayer in strategies)
+        Console.WriteLine($" - Name:{knownPlayer.Key} (ID: {knownPlayer.Value})");
 }
 
 static void PrintWinningRate(double rateA, double rateDraw, double rateB)

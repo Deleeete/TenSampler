@@ -1,9 +1,10 @@
 using System.Text;
 
-internal class Game(Dictionary<int, int> Choices, IPlayer playerA, IPlayer playerB)
+internal class Game(GameChoiceMap Choices, Player playerA, Player playerB)
 {
-    public IPlayer PlayerA { get; } = playerA;
-    public IPlayer PlayerB { get; } = playerB;
+    public GameChoiceMap ChoiceMap { get; } = Choices;
+    public Player PlayerA { get; } = playerA;
+    public Player PlayerB { get; } = playerB;
     public int ScoreA { get; private set; }
     public int ScoreB { get; private set; }
     public bool IsPlayerALeading => ScoreA > ScoreB;
@@ -23,14 +24,14 @@ internal class Game(Dictionary<int, int> Choices, IPlayer playerA, IPlayer playe
 
     public int Choose(int choice)
     {
-        if (!Choices.TryGetValue(choice, out int prob))
+        if (!ChoiceMap.Probabilities.TryGetValue(choice, out int prob))
             throw new Exception("Invalid choice");
         if (Random.Shared.Next(100) < prob)
             return choice;
         return 0;
     }
 
-    public int GetScore(IPlayer player)
+    public int GetScore(Player player)
     {
         if (player == PlayerA)
             return ScoreA;
@@ -40,7 +41,7 @@ internal class Game(Dictionary<int, int> Choices, IPlayer playerA, IPlayer playe
             throw new Exception("Player not in game");
     }
 
-    public int GetRivalScore(IPlayer player)
+    public int GetRivalScore(Player player)
     {
         if (player == PlayerA)
             return ScoreB;
@@ -50,7 +51,7 @@ internal class Game(Dictionary<int, int> Choices, IPlayer playerA, IPlayer playe
             throw new Exception("Player not in game");
     }
 
-    public int GetScoreDiff(IPlayer player)
+    public int GetScoreDiff(Player player)
     {
         if (player == PlayerA)
             return ScoreA - ScoreB;
@@ -60,7 +61,7 @@ internal class Game(Dictionary<int, int> Choices, IPlayer playerA, IPlayer playe
             throw new Exception("Player not in game");
     }
 
-    public bool IsPlayerLeading(IPlayer player)
+    public bool IsPlayerLeading(Player player)
     {
         if (player == PlayerA)
             return ScoreA > ScoreB;
