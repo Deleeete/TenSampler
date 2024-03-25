@@ -22,7 +22,7 @@
             while (!End)
             {
                 int cursorLeft = Console.CursorLeft;
-                Console.Write($"{100.0 * Value / Max:f3}%".PadLeft(ProgressPrintWidth));
+                Console.Write($"{Convert.ToDouble(Value) / Max * 100:f3}%".PadLeft(ProgressPrintWidth));
                 Thread.Sleep(1000);
                 Console.CursorLeft = cursorLeft;
                 Console.Write(progressEraser);

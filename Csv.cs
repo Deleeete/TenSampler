@@ -6,6 +6,7 @@ internal class Csv
 
     public int Cols { get; private set; }
 
+    public Csv() { }
     public Csv(IEnumerable<string> cols, int pad)
     {
         NewRow("\\");

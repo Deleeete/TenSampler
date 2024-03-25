@@ -1,4 +1,6 @@
-﻿const int DefaultSampleSize = 100_0000;
+﻿using System.Collections.Concurrent;
+
+const int DefaultSampleSize = 100_0000;
 const int DefaultRunCount = 10;
 
 Dictionary<int, int> probs = new()
@@ -62,8 +64,9 @@ try
             Run(playerA, playerB);
         else
         {
-            (double rateA, double rateDraw, double rateB) = WinningRate(playerA, playerB, sampleSize);
+            (double rateA, double rateDraw, double rateB, var histA, var histB) = WinningRate(playerA, playerB, sampleSize);
             PrintWinningRate(rateA, rateDraw, rateB);
+            PrintHist(histA, sampleSize);
         }
     }
 }
@@ -80,8 +83,18 @@ Environment.Exit(0);
 async Task GenerateMatrix(Dictionary<string, IStrategy> strategies, int sampleSize)
 {
     string[] strategyNames = strategies.Values.Select(s => s.Name).ToArray();
+    string[] namePairs = new string[strategyNames.Length * strategyNames.Length];
+    int namePairsIndex = 0;
+    foreach (var strategyName1 in strategyNames)
+    {
+        foreach (var strategyName2 in strategyNames)
+        {
+            namePairs[namePairsIndex] = $"{strategyName1} VS {strategyName2}";
+        }
+    }
     Csv fullTable = new(strategyNames, 3);
     Csv compactTable = new(strategyNames);
+    Csv histTable = new();
     int counter = 0, totalCount = strategyNames.Length * strategyNames.Length;
     foreach (var kvpStrategyA in strategies)
     {
@@ -92,17 +105,34 @@ async Task GenerateMatrix(Dictionary<string, IStrategy> strategies, int sampleSi
         {
             Console.WriteLine("---------------------");
             Player playerB = new(kvpStrategyB.Value);
-            (double rateA, double rateDraw, double rateB) = WinningRate(playerA, playerB, sampleSize, false);
+            (double rateA, double rateDraw, double rateB, var histA, var histB) = WinningRate(playerA, playerB, sampleSize, false);
             PrintWinningRate(rateA, rateDraw, rateB);
             fullTable.AppendElements($"{rateA:f4}", $"{rateDraw:f4}", $"{rateB:f4}");
             compactTable.AppendElements($"{rateA:f4}");
+            histTable.NewRow($"{kvpStrategyA.Key} VS {kvpStrategyB.Key}: ScoreA");
+            var sortedKeysA = histA.Keys.ToArray();
+            Array.Sort(sortedKeysA);
+            foreach (var key in sortedKeysA)
+            {
+                histTable.NewRow($"{key}");
+                histTable.AppendElements($"{Convert.ToDouble(histA[key]) / sampleSize}");
+            }
+            histTable.NewRow($"{kvpStrategyA.Key} VS {kvpStrategyB.Key}: ScoreB");
+            var sortedKeysB = histB.Keys.ToArray();
+            Array.Sort(sortedKeysB);
+            foreach (var key in sortedKeysB)
+            {
+                histTable.NewRow($"{key}");
+                histTable.AppendElements($"{Convert.ToDouble(histB[key]) / sampleSize}");
+            }
             counter++;
-            Console.WriteLine($"[{counter}/{totalCount}] {100.0 * counter / totalCount:f3}%");
+            Console.WriteLine($"[{counter}/{totalCount}] {Convert.ToDouble(counter) / totalCount * 100:f3}%");
             Console.WriteLine("---------------------\n");
         }
     }
     await File.WriteAllTextAsync("full.csv", fullTable.ToString());
     await File.WriteAllTextAsync("compact.csv", compactTable.ToString());
+    await File.WriteAllTextAsync("hist.csv", histTable.ToString());
 }
 
 void Run(Player playerA, Player playerB)
@@ -118,18 +148,22 @@ void Run(Player playerA, Player playerB)
     }
 }
 
-(double, double, double) WinningRate(Player playerA, Player playerB, int sampleSize, bool showProgress = true)
+(double, double, double, ConcurrentDictionary<int, int>, ConcurrentDictionary<int, int>) WinningRate(Player playerA, Player playerB, int sampleSize, bool showProgress = true)
 {
     Console.WriteLine($"Evaluating: [{playerA} vs {playerB}] Sample size: {sampleSize}");
     ProgressControl progress = new(0, sampleSize);
-    int aWinCounter = 0, bWinCounter = 0, drawCounter = 0;
     if (showProgress)
         progress.Show();
+    ConcurrentDictionary<int, int> histScoreA = new();
+    ConcurrentDictionary<int, int> histScoreB = new();
+    int aWinCounter = 0, bWinCounter = 0, drawCounter = 0;
     Parallel.For(0, sampleSize, i =>
     {
         Game game = new(choiceMap, playerA, playerB);
         game.Reset();
         game.RunToEnd();
+        histScoreA.AddOrUpdate(game.ScoreA, 1, (k, v) => v + 1);
+        histScoreB.AddOrUpdate(game.ScoreB, 1, (k, v) => v + 1);
         progress.Increment();
         if (game.IsPlayerALeading)
             Interlocked.Increment(ref aWinCounter);
@@ -138,10 +172,10 @@ void Run(Player playerA, Player playerB)
         if (game.IsDraw)
             Interlocked.Increment(ref drawCounter);
     });
-    double rateA = 1.0 * aWinCounter / sampleSize;
-    double rateB = 1.0 * bWinCounter / sampleSize;
-    double rateDraw = 1.0 * drawCounter / sampleSize;
-    return (rateA, rateDraw, rateB);
+    double rateA = Convert.ToDouble(aWinCounter) / sampleSize;
+    double rateB =Convert.ToDouble(bWinCounter) / sampleSize;
+    double rateDraw = Convert.ToDouble(drawCounter) / sampleSize;
+    return (rateA, rateDraw, rateB, histScoreA, histScoreB);
 }
 
 static int GetSampleSize(string s)
@@ -177,4 +211,15 @@ void PrintStrategies()
 static void PrintWinningRate(double rateA, double rateDraw, double rateB)
 {
     Console.WriteLine($"\nWinning rate [A/Draw/B]: {rateA:f4}/{rateDraw:f4}/{rateB:f4}    Sum:{rateA + rateDraw + rateB}");
+}
+
+static void PrintHist(IDictionary<int, int> hist, int total)
+{
+    Console.WriteLine($"{hist.Count} possible scores:");
+    var sortedKeys = hist.Keys.ToArray();
+    Array.Sort(sortedKeys);
+    foreach (var key in sortedKeys)
+    {
+        Console.WriteLine($" - {key,2} : {Convert.ToDouble(hist[key]) / total * 100:f4}%");
+    }
 }

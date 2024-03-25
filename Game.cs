@@ -118,9 +118,7 @@ internal class Game(GameChoiceMap Choices, Player playerA, Player playerB)
             int choiceB = History[round, PlayerBIndex, ChoiceIndex];
             int scoreB = History[round, PlayerBIndex, ScoreIndex];
             int gainB = History[round, PlayerBIndex, GainIndex];
-            sb.AppendFormat("Round[{0}] ScoreA={1:d2} ChoiceA={2:d2} GainA={3} | ScoreB={4:d2} ChoiceB={5:d2} GainB={6}\n", round,
-                scoreA, choiceA, gainA,
-                scoreB, choiceB, gainB);
+            sb.AppendFormat($"Round[{round:d2}] ScoreA={scoreA,2} ChoiceA={choiceA,2} GainA={gainA,2} | ScoreB={scoreB,2} ChoiceB={choiceB,2} GainB={gainB,2}\n");
         }
         return sb.ToString();
     }
