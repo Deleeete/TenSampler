@@ -37,6 +37,17 @@ internal class Csv
         return colCount;
     }
 
+    public int AppendElements(Span<char> cols)
+    {
+        int colCount = 0;
+        foreach (var col in cols)
+        {
+            _sb.Append(col);
+            _sb.Append(',');
+        }
+        return colCount;
+    }
+
     public void AppendElements(params string[] cols)
     {
         foreach (var col in cols)

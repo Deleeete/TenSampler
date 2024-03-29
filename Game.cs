@@ -14,18 +14,20 @@ internal class Game(GameChoiceMap Choices, Player playerA, Player playerB)
     private const int ChoiceIndex = 0, ScoreIndex = 1, GainIndex = 2;
     private const int PlayerAIndex = 0, PlayerBIndex = 1;
     public int[,,] History { get; } = new int[GameRounds, 2, 3];
-    public int CurrentRound { get; private set; }
+    public int CurrentStep { get; private set; } = 0;
+    public int CurrentRound { get; private set; } = 0;
 
     public void Reset()
     {
         History.Initialize();
+        CurrentStep = 0;
         CurrentRound = 0;
     }
 
     public int Choose(int choice)
     {
         if (!ChoiceMap.Probabilities.TryGetValue(choice, out int prob))
-            throw new Exception("Invalid choice");
+            throw new Exception($"Invalid choice [{choice}]");
         if (Random.Shared.Next(100) < prob)
             return choice;
         return 0;
@@ -79,6 +81,7 @@ internal class Game(GameChoiceMap Choices, Player playerA, Player playerB)
         History[CurrentRound, PlayerAIndex, ChoiceIndex] = choice;
         History[CurrentRound, PlayerAIndex, ScoreIndex] = ScoreA;
         History[CurrentRound, PlayerAIndex, GainIndex] = gain;
+        CurrentStep++;
 
         choice = PlayerB.GetChoice(this);
         gain = Choose(choice);
@@ -86,6 +89,7 @@ internal class Game(GameChoiceMap Choices, Player playerA, Player playerB)
         History[CurrentRound, PlayerBIndex, ChoiceIndex] = choice;
         History[CurrentRound, PlayerBIndex, ScoreIndex] = ScoreB;
         History[CurrentRound, PlayerBIndex, GainIndex] = gain;
+        CurrentStep++;
         CurrentRound++;
     }
 
@@ -118,7 +122,7 @@ internal class Game(GameChoiceMap Choices, Player playerA, Player playerB)
             int choiceB = History[round, PlayerBIndex, ChoiceIndex];
             int scoreB = History[round, PlayerBIndex, ScoreIndex];
             int gainB = History[round, PlayerBIndex, GainIndex];
-            sb.AppendFormat($"Round[{round:d2}] ScoreA={scoreA,2} ChoiceA={choiceA,2} GainA={gainA,2} | ScoreB={scoreB,2} ChoiceB={choiceB,2} GainB={gainB,2}\n");
+            sb.AppendFormat($"[{round:d2}] ChoiceA={choiceA,-2} GainA={gainA,-2}  ScoreA={scoreA,-2}  | ChoiceB={choiceB,-2}  GainB={gainB,-2}  ScoreB={scoreB,-2}\n");
         }
         return sb.ToString();
     }
@@ -131,7 +135,7 @@ internal class Game(GameChoiceMap Choices, Player playerA, Player playerB)
             int score = History[playerIndex, ScoreIndex, round];
             int choice = History[playerIndex, ChoiceIndex, round];
             int gain = History[playerIndex, GainIndex, round];
-            sb.AppendFormat("[{0}] Score={1:d2} Choice={2:d2} Gain={3:d2}\n", round, score, choice, gain);
+            sb.AppendFormat("[{0}] Choice={2:d2}  Gain={3:d2}  Score={1:d2} \n", round, score, choice, gain);
         }
         return sb.ToString();
     }
