@@ -1,8 +1,6 @@
 ﻿using System.Collections.Concurrent;
 
-const int DefaultSampleSize = 100_0000;
-const int DefaultRunCount = 10;
-const int MaxDiff = 100;
+const int DefaultSampleSize = 1000_0000;
 
 Dictionary<int, int> probs = new()
 {
@@ -17,25 +15,27 @@ GameChoiceMap choiceMap = new(probs);
 
 Dictionary<string, IStrategy> strategies = new()
 {
-    // { "1", new StrategyAllN(1) },
-    // { "2", new Strategy2() },
+    { "1", new StrategyAllN(1) },
+    { "2", new Strategy2() },
     { "3", new Strategy3() },
     // { "a2", new StrategyA2() },
     // { "a3", new StrategyA3() },
     // { "b3", new StrategyB3() },
-    //{ "R", new StrategyR(Dp()) },
+    { "R1", new StrategyR("1", choiceMap, GetChoice1, false) },
+    { "R2", new StrategyR("2", choiceMap, GetChoice2, false) },
+    { "R3", new StrategyR("3", choiceMap, GetChoice3, true) },
     { "P", new StrategyP() },
     //{ "8", new StrategyAny(8) },
     //{ "randomer", new StrategyRandom() }
 };
 
-// foreach (var choice in probs.Keys)
-// {
-//     if (choice == 1) // all-1 is already covered by type-1
-//         continue;
-//     var player = new StrategyAllN(choice);
-//     strategies.Add(player.Name, player);
-// }
+//foreach (var choice in probs.Keys)
+//{
+//    if (choice == 1) // all-1 is already covered by type-1
+//        continue;
+//    var player = new StrategyAllN(choice);
+//    strategies.Add(player.Name, player);
+//}
 
 // FixedStrategies(DefaultSampleSize);
 
@@ -47,7 +47,7 @@ try
         Console.WriteLine("sampler help|-h|--help   - Print this help");
         Console.WriteLine("sampler                  - Generate winning rate matrix");
         Console.WriteLine("sampler N                - Generate winning rate matrix (Sample size = N)");
-        Console.WriteLine($"sampler A B              - Run {DefaultRunCount} game(s) between player A and player B with details");
+        Console.WriteLine($"sampler A B              - Run {Game.GameRounds} game(s) between player A and player B with details");
         Console.WriteLine("sampler A B N            - Generate winning rate between player A and player B (Sample size = N)\n");
         PrintStrategies();
         return;
@@ -80,10 +80,8 @@ try
 }
 catch (Exception ex)
 {
-    Environment.FailFast(ex.ToString());
+    Console.WriteLine(ex);
 }
-
-Environment.Exit(0);
 
 //////////////////////////////////////////////////////////////////
 
@@ -145,7 +143,7 @@ async Task GenerateMatrix(Dictionary<string, IStrategy> strategies, int sampleSi
 
 void Run(Player playerA, Player playerB)
 {
-    for (int i = 0; i < DefaultRunCount; i++)
+    for (int i = 0; i < Game.GameRounds; i++)
     {
         Game game = new(choiceMap, playerA, playerB);
         game = new(choiceMap, playerA, playerB);
@@ -210,196 +208,13 @@ WinningRateResult WinningRate(Player playerA, Player playerB, int sampleSize, bo
     return new(rateA, rateDraw, rateB, histScoreA, histScoreB);
 }
 
-(int, double)[,] Dp()
-{
-    int diffCount = MaxDiff * 2 + 1;
-    // 预计算f[x,d]
-    Dictionary<(int, int), double>[] fs = new Dictionary<(int, int), double>[diffCount];
-    for (int d = 0; d < diffCount; d++)
-    {
-        int diff = d - MaxDiff;
-        fs[d] = F(diff);
-    }
-    // R[r,d]: r = 剩余轮数；d = 差距diff; 值：(最大胜率选择, 最大胜率)
-    (int, double)[,] R = new (int, double)[Game.GameRounds, diffCount];
-    // 计算最后一轮的R
-    for (int d = 0; d < diffCount; d++)
-    {
-        int diff = d - MaxDiff;
-        // 由于是最后一轮，最大胜率 = 所有大于0的diff中概率最大者的概率
-        double maxProb = double.NegativeInfinity;
-        int bestChoice = -1;
-        foreach (var kvp in fs[d])
-        {
-            (int choice, int nextDiff) = kvp.Key;
-            if (nextDiff <= 0)
-                continue;
-            if (kvp.Value > maxProb)
-            {
-                maxProb = kvp.Value;
-                bestChoice = choice;
-            }
-        }
-        R[0, d] = (bestChoice, maxProb);
-    }
-    // 倒推计算之前每一轮的R
-    for (int r = 1; r < Game.GameRounds; r++)
-    {
-        double maxRate = double.NegativeInfinity;
-        int bestChoice = -1;
-        for (int d = 0; d < diffCount; d++)
-        {
-            int diff = d - MaxDiff;
-            foreach (var kvp in fs[d])
-            {
-                (int choice, int nextDiff) = kvp.Key;
-                int maxDiffAbs = r * 10;
-                if (nextDiff < -maxDiffAbs || nextDiff > maxDiffAbs) // 只考虑范围内的差距。第n轮最大差距绝对值 = n * 10
-                    continue;
-                double currentProb = kvp.Value;
-                // 获取下一轮的R[r,d]。应在之前计算过
-                (_, double nextRate) = R[r - 1, nextDiff + MaxDiff];
-                double currentRate = currentProb * nextRate;
-                if (currentRate > maxRate)
-                {
-                    maxRate = currentRate;
-                    bestChoice = choice;
-                }
-            }
-            R[r, d] = (bestChoice, maxRate);
-        }
-    }
-    for (int r = 0; r < Game.GameRounds; r++)
-    {
-        for (int d = 0; d < diffCount; d++)
-        {
-            (int bestChoice, double rate) = R[r, d];
-            Console.WriteLine($"{r},{d - MaxDiff},{bestChoice},{rate}");
-        }
-    }
-    return R;
-}
 
-// 状态转移函数。key: (diff, x, new_diff); value: (, prob(new_diff))
-Dictionary<(int, int), double> F(int d)
-{
-    ConcurrentDictionary<(int, int), int> preRet = [];
-    // 单轮情况可以用四元组 (a, b, hit_a, hit_b) 表示
-    // 遍历所有情况
-    //   给定先手选择
-    foreach (var choiceA in choiceMap.Choices)
-    {
-        // 给定先手是否命中
-        for (int hitA = 0; hitA <= 1; hitA++)
-        {
-            int probA = hitA == 1
-                ? choiceMap.Probabilities[choiceA]
-                : 100 - choiceMap.Probabilities[choiceA];
-            if (probA == 0)
-                continue;
-            // 从策略获取选择
-            int newDiff = - (d + choiceA * hitA);
-            int choiceB = GetChoice3(newDiff);
-            for (int hitB = 0; hitB <= 1; hitB++)
-            {
-                int probB = hitB == 1
-                    ? choiceMap.Probabilities[choiceB]
-                    : 100 - choiceMap.Probabilities[choiceB];
-                if (probB == 0)
-                    continue;
-                newDiff = - (newDiff + choiceB * hitB);
-                int prob = probA * probB;
-                //Console.WriteLine($"{choiceA} {d} -> {newDiff} : {probA} * {probB}");
-                preRet.AddOrUpdate((choiceA, newDiff), prob, (k, v) => v + prob);
-            }
-        }
-    }
-    Dictionary<(int, int), double> ret = [];
-    foreach (var kvp in preRet)
-        ret.Add(kvp.Key, Convert.ToDouble(kvp.Value) / 100_00);
-    return ret;
-}
 
-int Rate(int d, int r)
-{
-    List<(int, double)> rates = new();
-    // 最后一轮情况可以用四元组 (a, b, hit_a, hit_b) 表示
-    // 遍历每个局面
-    //   给定先手选择
-    foreach (var choiceA in choiceMap.Choices)
-    {
-        ConcurrentDictionary<int, int> probs = new();
-        // 给定先手是否命中
-        for (int hitA = 0; hitA <= 1; hitA++)
-        {
-            int probA =  hitA == 1
-                ? choiceMap.Probabilities[choiceA]
-                : 1 - choiceMap.Probabilities[choiceA];
-            // 从策略获取选择
-            int diff = - (d + choiceA * hitA);
-            int choiceB = GetChoice3(diff);
-            for (int hitB = 0; hitB <= 1; hitB++)
-            {
-                int probB =  hitB == 1
-                    ? choiceMap.Probabilities[choiceB]
-                    : 100 - choiceMap.Probabilities[choiceB];
-                diff = - (diff + choiceB * hitB);
-                int prob = probA * probB;
-                probs.AddOrUpdate(diff, prob, (k, v) => v + prob);
-            }
-        }
-        // 对diff大于0的概率求和，得到胜率
-        int rate = 0;
-        foreach (var kvp in probs)
-        {
-            if (kvp.Key > 0)
-                rate += kvp.Value;
-        }
-        rates.Add((choiceA, Convert.ToDouble(rate) / (100 * 100)));
-    }
-    return rates.OrderByDescending(rate => rate.Item2).First().Item1;
-}
+int GetChoice1(int _)
+    => 1;
 
-// 计算给定差距d，最后一局时，胜率最高的选择
-int RateLast(int d)
-{
-    List<(int, double)> rates = new();
-    // 最后一轮情况可以用四元组 (a, b, hit_a, hit_b) 表示
-    // 遍历每个局面
-    //   给定先手选择
-    foreach (var choiceA in choiceMap.Choices)
-    {
-        ConcurrentDictionary<int, int> probs = new();
-        // 给定先手是否命中
-        for (int hitA = 0; hitA <= 1; hitA++)
-        {
-            int probA =  hitA == 1
-                ? choiceMap.Probabilities[choiceA]
-                : 1 - choiceMap.Probabilities[choiceA];
-            // 从策略获取选择
-            int diff = - (d + choiceA * hitA);
-            int choiceB = GetChoice3(diff);
-            for (int hitB = 0; hitB <= 1; hitB++)
-            {
-                int probB =  hitB == 1
-                    ? choiceMap.Probabilities[choiceB]
-                    : 100 - choiceMap.Probabilities[choiceB];
-                diff = - (diff + choiceB * hitB);
-                int prob = probA * probB;
-                probs.AddOrUpdate(diff, prob, (k, v) => v + prob);
-            }
-        }
-        // 对diff大于0的概率求和，得到胜率
-        int rate = 0;
-        foreach (var kvp in probs)
-        {
-            if (kvp.Key > 0)
-                rate += kvp.Value;
-        }
-        rates.Add((choiceA, Convert.ToDouble(rate) / (100 * 100)));
-    }
-    return rates.OrderByDescending(rate => rate.Item2).First().Item1;
-}
+int GetChoice2(int diff)
+    => diff > 0 ? 1 : 10;
 
 int GetChoice3(int diff)
 {
@@ -413,7 +228,6 @@ int GetChoice3(int diff)
     }
     return choiceMap.Choices.Last();
 }
-
 
 void FixedStrategies(int sampleSize)
 {
@@ -493,7 +307,7 @@ void PrintStrategies()
 
 static void PrintWinningRate(double rateA, double rateDraw, double rateB)
 {
-    Console.WriteLine($"\nWinning rate [A/Draw/B]: {rateA:f4}/{rateDraw:f4}/{rateB:f4}    Sum:{rateA + rateDraw + rateB}");
+    Console.WriteLine($"\nWinning rate [A/Draw/B]: {rateA:f6}/{rateDraw:f6}/{rateB:f6}    Sum:{rateA + rateDraw + rateB}");
 }
 
 static void PrintHist(IDictionary<int, int> hist, int total)

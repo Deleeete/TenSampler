@@ -32,4 +32,10 @@ internal static class Utils
         }
         return new(charArray, index + 1, length);;
     }
+
+    public static void AddOrUpdate<TKey, TValue>(this Dictionary<TKey, TValue> dict, TKey key, TValue init, Func<TKey, TValue, TValue> updater)
+    {
+        if (!dict.TryAdd(key, init))
+            dict[key] = updater(key, dict[key]);
+    }
 }
